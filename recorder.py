@@ -17,7 +17,7 @@ class Recorder:
 
     async def cleanup(self):
         while True:
-            user_recording_path, user_recording_path, username = await self.cleanup_queue.get()
+            user_recording_path, user_processed_path, username = await self.cleanup_queue.get()
             video_list = [filename for filename in os.listdir(user_recording_path) if os.path.isfile(os.path.join(user_recording_path, filename))]
             for filename in video_list:
                 recorded_filename = os.path.join(user_recording_path, filename)
