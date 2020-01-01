@@ -79,12 +79,12 @@ class Recorder:
                         await self.cleanup_queue.put((recording_path, processed_path, username))
                     else:
                         logger.info(f"{username} is not streaming.")
-
-                    if isinstance(self.refresh_rate, int):
-                        await asyncio.sleep(self.refresh_rate)
                 else:
                     continue_hold = False
-                
+
+                if isinstance(self.refresh_rate, int):
+                        await asyncio.sleep(self.refresh_rate)
+
         except asyncio.CancelledError:
             logger.info(f"{username} has been removed from the watch pool.")
 
