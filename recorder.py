@@ -16,6 +16,7 @@ class Recorder:
         self.cleanup_task = asyncio.create_task(self.cleanup())
 
     async def cleanup(self):
+        logger.debug("Creating cleanup task.")
         while True:
             user_recording_path, user_processed_path, username = await self.cleanup_queue.get()
             video_list = [filename for filename in os.listdir(user_recording_path) if os.path.isfile(os.path.join(user_recording_path, filename))]
@@ -23,14 +24,19 @@ class Recorder:
                 recorded_filename = os.path.join(user_recording_path, filename)
                 processed_export_filename = os.path.join(user_processed_path, filename)
                 logger.debug(f"Fixing {recorded_filename}.")
-                command = [self.ffmpeg_path, '-err_detect', 'ignore_err', '-i', recorded_filename, '-c', 'copy', processed_export_filename]
+                command = [self.ffmpeg_path, '-nostdin', '-y', '-err_detect', 'ignore_err', '-i', recorded_filename, '-c', 'copy', processed_export_filename]
                 process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
                 await process.wait()
 
                 if process.returncode == 0:
-                    os.remove(recorded_filename)
+                    await asyncio.sleep(30) #Bug
+                    try:
+                        os.remove(recorded_filename)
+                    except Exception as e:
+                        logger.error(f"error removing the file at {recorded_filename} with \n{e}")          
                 else:
                     logger.error(f"ffmpeg returned error code {process.returncode}")
+        logger.debug("Cleanup task completed")
 
     async def record(self, username, url, check_stream_function):
         """ Start recording for specified url """
@@ -43,10 +49,19 @@ class Recorder:
             if not os.path.isdir(processed_path):
                 os.makedirs(processed_path)
 
-            last_action = "Recording"
+            # await self.cleanup_queue.put((recording_path, processed_path, username))
+
+            should_hold = False # debug feature, might become new feature
+            continue_hold = True
+
             while True:
                 status, title = await check_stream_function(username)
                 if status:
+                    if should_hold and continue_hold:
+                        if isinstance(self.refresh_rate, int): #dont choke the event loop
+                            await asyncio.sleep(self.refresh_rate)
+                        continue
+
                     logger.info(f"{username} has started streaming.")
 
                     filename = username + " - " + str(int(time.time())) + " - " + title + ".mp4"
@@ -62,14 +77,14 @@ class Recorder:
                     if process.returncode == 0 and os.path.exists(recorded_filename) and os.path.isfile(recorded_filename):
                         logger.info(f"{username} has finished recording.")
                         await self.cleanup_queue.put((recording_path, processed_path, username))
-                        last_action = "Recording"
                     else:
-                        if last_action == "Recording":
-                            logger.info(f"{username} is not streaming.")
-                            last_action = "Offline"
+                        logger.info(f"{username} is not streaming.")
 
-                if isinstance(self.refresh_rate, int):
-                    await asyncio.sleep(self.refresh_rate)
+                    if isinstance(self.refresh_rate, int):
+                        await asyncio.sleep(self.refresh_rate)
+                else:
+                    continue_hold = False
+                
         except asyncio.CancelledError:
             logger.info(f"{username} has been removed from the watch pool.")
 
