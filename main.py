@@ -10,8 +10,9 @@ import multidict
 
 from twitch import TwitchHelixAPI
 
-class RecorderConfiguration:
-    def __init__(self, filename):
+class Recorder:
+    def __init__(self, loop, filename):
+        self.loop = loop
         self.filename = filename
         self.do_update()
 
@@ -30,11 +31,8 @@ class RecorderConfiguration:
         self.users = config["users"]
         self.last_modified = os.path.getmtime(self.filename)
 
-
-class Recorder:
-    @staticmethod
-    async def recording_task(recording_path, stream):
-        recording_path = os.path.join(recording_path, stream.user_name)
+    async def recording_task(self, stream):
+        recording_path = os.path.join(self.recording_path, stream.user_name)
         if not os.path.isdir(recording_path):
             os.makedirs(recording_path)
 
@@ -47,12 +45,11 @@ class Recorder:
 
         return filename, recorded_filename, stream
 
-    @staticmethod
-    async def cleanup_task(processed_path, queue):
+    async def cleanup_task(self, queue):
         while True:
             filename, recorded_filename, stream = await queue.get()
 
-            output_path = os.path.join(processed_path, stream.user_name)
+            output_path = os.path.join(self.processed_path, stream.user_name)
             if not os.path.isdir(output_path):
                 os.makedirs(output_path)
 
@@ -62,15 +59,14 @@ class Recorder:
             await process.wait()
             os.remove(recorded_filename)
 
-    @staticmethod
-    async def main(loop, config: RecorderConfiguration):
-        api = await TwitchHelixAPI.build(config.client_id, config.client_secret)
-        ids = await api.get_user_id_by_login(config.users)
+    async def run(self):
+        api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
+        ids = await api.get_user_id_by_login(self.users)
 
         tasks = {}
         completed_ids = []
         cleanup_queue = asyncio.Queue()
-        cleanup_task = loop.create_task(Recorder.cleanup_task(config.processed_path, cleanup_queue))
+        cleanup_task = self.loop.create_task(self.cleanup_task(cleanup_queue))
 
         while True:
             for key in tasks.keys():
@@ -86,11 +82,11 @@ class Recorder:
                 del tasks[key]
             completed_ids.clear()
 
-            if config.needs_update:
+            if self.needs_update:
                 await api.teardown()
-                config.do_update()
-                api = await TwitchHelixAPI.build(config.client_id, config.client_secret)
-                ids = await api.get_user_id_by_login(config.users)
+                self.do_update()
+                api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
+                ids = await api.get_user_id_by_login(self.users)
                 print("Configuration has been reloaded.")
 
             streams = await api.get_streams_by_user_id(ids)
@@ -99,7 +95,7 @@ class Recorder:
                     continue
 
                 print(f"{stream.user_name} has gone live. Starting recording.")
-                tasks[stream.user_id] = (stream, loop.create_task(Recorder.recording_task(config.recording_path, stream)))
+                tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task( stream)))
             
             await asyncio.sleep(15)
 
@@ -108,4 +104,5 @@ class Recorder:
 
 if __name__ == "__main__":
     loop = asyncio.ProactorEventLoop()
-    loop.run_until_complete(Recorder.main(loop, RecorderConfiguration("config.json")))
+    recorder = Recorder(loop, "config.json")
+    loop.run_until_complete(recorder.run())

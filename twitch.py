@@ -1,12 +1,19 @@
 
 import time
 import os
+import re
 from enum import Enum
 from datetime import datetime
 
 import asyncio
 import aiohttp
 import multidict
+
+def is_ascii(s):
+    try:
+        return len(s) == len(s.encode())
+    except Exception:
+        return False
 
 class TwitchStreamStatus(Enum):
     OFFLINE = 0
@@ -126,9 +133,15 @@ class TwitchHelixAPI:
         stream.title = response["title"]
         stream.user_id = int(response["user_id"])
         stream.user_name = response["user_name"]
+
+        # Twitch has a broken API and therefore for non-english usernames we have to parse the proper username out of the stupid thumbnail_url. 
+        # Can someone explain why they felt the need to deprecate the API that actually worked?
+        if not is_ascii(stream.user_name):
+            stream.user_name = re.search(r'https:\/\/static-cdn\.jtvnw\.net\/previews-ttv\/live_user_(.*?)-{width}x{height}.jpg', response["thumbnail_url"]).group(1)
+
         stream.game_id = int(response["game_id"])
         stream.stream_id = int(response["id"])
-        stream.url = "https://www.twitch.tv/" + response["user_name"]
+        stream.url = "https://www.twitch.tv/" + stream.user_name
         stream.started_at = datetime.strptime(response["started_at"], '%Y-%m-%dT%H:%M:%SZ')
         stream.status = TwitchStreamStatus.LIVE if response["type"] == "live" else TwitchStreamStatus.OFFLINE
         return stream
