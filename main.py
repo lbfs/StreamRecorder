@@ -57,7 +57,11 @@ class Recorder:
             command = ['ffmpeg', '-nostdin', '-y', '-err_detect', 'ignore_err', '-i', recorded_filename, '-c', 'copy', export_filename]
             process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
             await process.wait()
-            os.remove(recorded_filename)
+
+            try:
+                os.remove(recorded_filename)
+            except Exception as e:
+                pass
 
     async def run(self):
         api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
