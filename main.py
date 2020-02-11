@@ -101,21 +101,22 @@ class Recorder:
                 api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
                 ids = await api.get_user_id_by_login(self.users)
 
-            keys = list(tasks.keys())
 
             streams = await api.get_streams_by_user_id(ids)
             for stream in streams:
-                if stream.user_id in keys:
+                if stream.user_id in tasks.keys():
                     continue
 
                 tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task(stream)))
-            
+
+            keys = list(tasks.keys())
+
             clear_console()
             current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
             print_str = f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}\n"
             if len(keys):
-                active_users = ", ".join(map(str, keys))
+                active_users = ", ".join(map(lambda task: tasks[task][0].user_name, tasks))
                 active_users = f"Active users: {active_users}\n"
                 print_str += active_users
             print_str += f"Currently processing: {self.is_processing}\nConfiguration last modified: {last_loaded_timestamp}"
