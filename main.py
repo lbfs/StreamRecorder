@@ -17,6 +17,7 @@ class Recorder:
     def __init__(self, loop, filename):
         self.loop = loop
         self.filename = filename
+        self.is_processing = False
         self.do_update()
 
     @property
@@ -48,9 +49,11 @@ class Recorder:
 
         return filename, recorded_filename, stream
 
-    async def cleanup_task(self, queue):
+    async def cleanup_task(self):
         while True:
-            filename, recorded_filename, stream = await queue.get()
+            filename, recorded_filename, stream = await self.cleanup_queue.get()
+
+            self.is_processing = True
 
             output_path = os.path.join(self.processed_path, stream.user_name)
             if not os.path.isdir(output_path):
@@ -63,26 +66,29 @@ class Recorder:
 
             try:
                 os.remove(recorded_filename)
-            except Exception as e:
+            except:
                 pass
+
+            if self.cleanup_queue.qsize() == 0:
+                self.is_processing = False
 
     async def run(self):
         api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
         ids = await api.get_user_id_by_login(self.users)
 
+        self.cleanup_queue = asyncio.Queue()
+        self.cleanup_action = self.loop.create_task(self.cleanup_task())
+
         tasks = {}
         completed_ids = []
-        cleanup_queue = asyncio.Queue()
-        cleanup_task = self.loop.create_task(self.cleanup_task(cleanup_queue))
 
         while True:
             for key in tasks.keys():
                 try:
                     result = tasks[key][1].result()
                     completed_ids.append(key)
-                    # print(f"{tasks[key][0].user_name} has gone offline. Recording stopped.")
-                    await cleanup_queue.put(result)
-                except Exception as e:
+                    await self.cleanup_queue.put(result)
+                except:
                     continue
             
             for key in completed_ids:
@@ -94,28 +100,28 @@ class Recorder:
                 self.do_update()
                 api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
                 ids = await api.get_user_id_by_login(self.users)
-                # print("Configuration has been reloaded.")
 
             keys = list(tasks.keys())
-            clear_console()
-            currently_processing = "True" if cleanup_queue.qsize() > 0 else "False"
-            current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
-            print(f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}")
-            if len(keys):
-                active_users = ", ".join(keys)
-                active_users = f"Active users: {active_users}"
-                print(active_users)
-            print(f"Currently processing: {currently_processing}\nConfiguration last modified: {last_loaded_timestamp}")
 
             streams = await api.get_streams_by_user_id(ids)
             for stream in streams:
                 if stream.user_id in keys:
                     continue
 
-                # print(f"{stream.user_name} has gone live. Starting recording.")
-                tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task( stream)))
+                tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task(stream)))
             
+
+            clear_console()
+            current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
+            print_str = f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}\n"
+            if len(keys):
+                active_users = ", ".join(keys)
+                active_users = f"Active users: {active_users}\n"
+                print_str += active_users
+            print_str += f"Currently processing: {self.is_processing}\nConfiguration last modified: {last_loaded_timestamp}"
+            print(print_str)
+
             await asyncio.sleep(15)
 
         await api.teardown()
