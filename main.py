@@ -110,13 +110,12 @@ class Recorder:
 
                 tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task(stream)))
             
-
             clear_console()
             current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
             print_str = f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}\n"
             if len(keys):
-                active_users = ", ".join(keys)
+                active_users = ", ".join(map(str, keys))
                 active_users = f"Active users: {active_users}\n"
                 print_str += active_users
             print_str += f"Currently processing: {self.is_processing}\nConfiguration last modified: {last_loaded_timestamp}"

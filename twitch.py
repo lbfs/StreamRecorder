@@ -139,7 +139,7 @@ class TwitchHelixAPI:
         if not is_ascii(stream.user_name):
             stream.user_name = re.search(r'https:\/\/static-cdn\.jtvnw\.net\/previews-ttv\/live_user_(.*?)-{width}x{height}.jpg', response["thumbnail_url"]).group(1)
 
-        stream.game_id = int(response["game_id"])
+        stream.game_id = response["game_id"] # Apparently this can return random bullshit so we can't use int.
         stream.stream_id = int(response["id"])
         stream.url = "https://www.twitch.tv/" + stream.user_name
         stream.started_at = datetime.strptime(response["started_at"], '%Y-%m-%dT%H:%M:%SZ')
