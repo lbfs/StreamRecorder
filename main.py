@@ -10,6 +10,9 @@ import multidict
 
 from twitch import TwitchHelixAPI
 
+def clear_console():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
 class Recorder:
     def __init__(self, loop, filename):
         self.loop = loop
@@ -77,7 +80,7 @@ class Recorder:
                 try:
                     result = tasks[key][1].result()
                     completed_ids.append(key)
-                    print(f"{tasks[key][0].user_name} has gone offline. Recording stopped.")
+                    # print(f"{tasks[key][0].user_name} has gone offline. Recording stopped.")
                     await cleanup_queue.put(result)
                 except Exception as e:
                     continue
@@ -91,14 +94,26 @@ class Recorder:
                 self.do_update()
                 api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
                 ids = await api.get_user_id_by_login(self.users)
-                print("Configuration has been reloaded.")
+                # print("Configuration has been reloaded.")
+
+            keys = list(tasks.keys())
+            clear_console()
+            currently_processing = "True" if cleanup_queue.qsize() > 0 else "False"
+            current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
+            print(f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}")
+            if len(keys):
+                active_users = ", ".join(keys)
+                active_users = f"Active users: {active_users}"
+                print(active_users)
+            print(f"Currently processing: {currently_processing}\nConfiguration last modified: {last_loaded_timestamp}")
 
             streams = await api.get_streams_by_user_id(ids)
             for stream in streams:
-                if stream.user_id in tasks.keys():
+                if stream.user_id in keys:
                     continue
 
-                print(f"{stream.user_name} has gone live. Starting recording.")
+                # print(f"{stream.user_name} has gone live. Starting recording.")
                 tasks[stream.user_id] = (stream, self.loop.create_task(self.recording_task( stream)))
             
             await asyncio.sleep(15)
