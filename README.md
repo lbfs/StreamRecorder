@@ -13,3 +13,10 @@ Record multiple streams at once for archival purposes.
     "users": ["username1", "username2", "username3"]
 }
 ```
+
+## Installation
+
+```bash
+python -m pip install -r requirements.txt
+apt-get install ffmpeg
+```
