@@ -57,28 +57,49 @@ class TwitchHelixAPI:
         api.headers = {"Client-ID": api.client_id}
         api.session = aiohttp.ClientSession()
         api.ratelimiter = asyncio.Semaphore()
-        await api.request_access_token()
+
+        delay = 1
+        while True:
+            res = await api.request_access_token()
+            if res:
+                break
+            await asyncio.sleep(delay * delay)
+            delay += 1
         return api
 
     async def request_access_token(self):
-        params = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "grant_type": "client_credentials"
-        }
+        try:
+            params = {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "grant_type": "client_credentials"
+            }
 
-        async with self.session.post(self.API_TOKEN_URL, params=params) as response:
-            data = await response.json()
-            access_token = data["access_token"]
-            self.headers["Authorization"] = f"Bearer {access_token}"
+            async with self.session.post(self.API_TOKEN_URL, params=params) as response:
+                data = await response.json()
+                access_token = data["access_token"]
+                self.headers["Authorization"] = f"Bearer {access_token}"
+
+            return True
+        except:
+            return False
 
     async def get(self, path, params):
         async with self.ratelimiter:
-            if self.ratelimiter_remaining == 0:
-                reset = int(self.ratelimiter_reset) - int(time.time())
-                if reset > 0:
-                    await asyncio.sleep(reset)
-            return await self._get(path, params)
+            delay = 1
+            while True:
+                try:
+                    if self.ratelimiter_remaining == 0:
+                        reset = int(self.ratelimiter_reset) - int(time.time())
+                        if reset > 0:
+                            await asyncio.sleep(reset)
+                    res = await self._get(path, params)
+                    return res
+                except:
+                    await asyncio.sleep(delay * delay)
+                    delay += 1
+                    continue
+
 
     async def _get(self, path, params, error_retries=0):
         if error_retries > 5:
@@ -109,7 +130,10 @@ class TwitchHelixAPI:
             raise TypeError("get_user_id_by_login: Improper login passed to function, must be str or list of str.")
 
         response = await self.get("users", items)
-        return [int(user["id"]) for user in response["data"]]
+        user_data = {}
+        for user in response["data"]:
+            user_data[int(user["id"])] = user["login"]
+        return user_data
 
     async def get_streams_by_user_id(self, user_id):
         if isinstance(user_id, list):

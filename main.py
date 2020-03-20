@@ -32,6 +32,7 @@ class Recorder:
         self.client_secret = config["client_secret"]
         self.recording_path = config["recording_path"]
         self.processed_path = config["processed_path"]
+        self.temporary_path = config["temporary_path"]
         self.users = config["users"]
         self.last_modified = os.path.getmtime(self.filename)
 
@@ -40,7 +41,7 @@ class Recorder:
         if not os.path.isdir(recording_path):
             os.makedirs(recording_path)
 
-        filename = stream.user_name + " - " + str(int(time.time())) + " - " + stream.title + ".mp4"
+        filename = stream.user_name + " - " + str(stream.stream_id) + " - " + str(int(time.time())) + " - " + stream.title + ".mp4"
         filename = "".join(x for x in filename if x.isalnum() or x in [" ", "-", "_", "."])
         recorded_filename = os.path.join(recording_path, filename)
         command = ["streamlink", "--twitch-disable-hosting", stream.url, "best", "-o", recorded_filename]
@@ -55,7 +56,7 @@ class Recorder:
 
             self.is_processing = True
 
-            output_path = os.path.join(self.processed_path, stream.user_name)
+            output_path = os.path.join(self.temporary_path, stream.user_name)
             if not os.path.isdir(output_path):
                 os.makedirs(output_path)
 
@@ -63,9 +64,30 @@ class Recorder:
             command = ['ffmpeg', '-nostdin', '-y', '-err_detect', 'ignore_err', '-i', recorded_filename, '-c', 'copy', export_filename]
             process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
             await process.wait()
+    
+            await asyncio.sleep(10)
 
             try:
                 os.remove(recorded_filename)
+            except:
+                pass
+
+            output_path = os.path.join(self.processed_path, stream.user_name)
+            if not os.path.isdir(output_path):
+                os.makedirs(output_path)
+
+            if os.name == "nt":
+                command = ['xcopy', export_filename, output_path, '/j']
+            else:
+                command = ['cp', export_filename, output_path]
+            
+            process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            await process.wait()
+
+            await asyncio.sleep(10)
+
+            try:
+                os.remove(export_filename)
             except:
                 pass
 
@@ -74,7 +96,8 @@ class Recorder:
 
     async def run(self):
         api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
-        ids = await api.get_user_id_by_login(self.users)
+        users = await api.get_user_id_by_login(self.users)
+        ids = list(users.keys())
 
         self.cleanup_queue = asyncio.Queue()
         self.cleanup_action = self.loop.create_task(self.cleanup_task())
@@ -99,8 +122,8 @@ class Recorder:
                 await api.teardown()
                 self.do_update()
                 api = await TwitchHelixAPI.build(self.client_id, self.client_secret)
-                ids = await api.get_user_id_by_login(self.users)
-
+                users = await api.get_user_id_by_login(self.users)
+                ids = list(users.keys())
 
             streams = await api.get_streams_by_user_id(ids)
             for stream in streams:
@@ -114,9 +137,13 @@ class Recorder:
             clear_console()
             current_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             last_loaded_timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(self.last_modified))
-            print_str = f"Current timestamp: {current_timestamp}\nActive recordings: {len(keys)}\n"
+            print_str = f"Current timestamp: {current_timestamp}\n"
+
+            user_str = ", ".join(users.values())
+            print_str += f"Monitoring: {user_str}\n"
+            print_str += f"Active recordings: {len(keys)}\n"
             if len(keys):
-                active_users = ", ".join(map(lambda task: tasks[task][0].user_name, tasks))
+                active_users = ", ".join(map(lambda task: users.get(tasks[task][0].user_id, str(tasks[task][0].user_id)), tasks))
                 active_users = f"Active users: {active_users}\n"
                 print_str += active_users
             print_str += f"Currently processing: {self.is_processing}\nConfiguration last modified: {last_loaded_timestamp}"
