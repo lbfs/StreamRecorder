@@ -17,9 +17,9 @@ A config.json must be present in the working directory containing the informatio
         "login_name_1",
         "login_name_2",
     ],
-    "recording_path": "G:\\Recording\\",
-    "cleanup_path": "G:\\Temporary\\",
-    "move_path": "F:\\Processed\\",
+    "recording_path": "G:\\\\Recording\\",
+    "cleanup_path": "G:\\\\Temporary\\",
+    "move_path": "F:\\\\Processed\\",
     "halt_until_next_live": false,
     "halt_newly_added": false
 }
