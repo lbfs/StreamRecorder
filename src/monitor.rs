@@ -113,7 +113,7 @@ impl Monitor {
         let config = Monitor::load_configuration(&filename);
         let refresh_duration = time::Duration::from_secs(15);
         let api = TwitchHelixAPI::new(config.client_id.clone(), config.client_secret.clone());
-        let modified = time::SystemTime::UNIX_EPOCH;
+        let modified = fs::metadata(&filename).unwrap().modified().unwrap();
 
         Monitor {
             api: api,
@@ -130,6 +130,24 @@ impl Monitor {
     }
 
     pub fn run(&mut self) {
+        let local_users = self.api.retrieve_users(&self.config.login_names).unwrap();
+        if self.config.halt_until_next_live {
+            match self.api.retrieve_streams(local_users.iter()) {
+                Ok(streams) => {
+                    let extension: Vec<TwitchStream> = streams.into_iter().filter(|stream| !self.streams.contains_key(&stream.id)).collect();
+                    self.halt_streams.extend(extension);
+                }
+                Err(_) => {
+                    eprintln!("Failed to retrieve stream information. Attempting to update on next iteration.");
+                }
+            }
+        }
+
+        self.users.clear();
+        for user in local_users {
+            self.users.insert(user.id.clone(), user);
+        }
+
         loop {
             // Reload configuration if needed
             if self.needs_reload() {
@@ -150,6 +168,7 @@ impl Monitor {
                     }
                     self.config = local_config;
                     self.modified = fs::metadata(&self.filename).unwrap().modified().unwrap();
+                    self.users.clear();
                     for user in users {
                         self.users.insert(user.id.clone(), user);
                     }
@@ -253,14 +272,14 @@ impl Monitor {
             if self.previous_length != self.streams.len() {
                 match self.streams.values().collect::<Vec<&MonitorUnit>>().as_slice() {
                     [] => println!("Not recording."),
-                    [single] => println!("Actively recording {}'s stream.", self.fetch_login(single)),
-                    [first, second] => println!("Actively recording {}'s and {}'s stream.", self.fetch_login(first), self.fetch_login(second)),
+                    [single] => println!("Actively recording {}'s stream.", single.stream.user_name),
+                    [first, second] => println!("Actively recording {}'s and {}'s stream.", first.stream.user_name, second.stream.user_name),
                     [start @ .., last] => {
                         print!("Actively recording ");
                         for entry in start {
-                            print!("{}, ", self.fetch_login(entry));
+                            print!("{}, ", entry.stream.user_name);
                         }
-                        println!("and {}'s streams.",  self.fetch_login(last));
+                        println!("and {}'s streams.",  last.stream.user_name);
                     }
                 }
                 self.previous_length = self.streams.len();
@@ -288,9 +307,5 @@ impl Monitor {
         file.read_to_string(&mut contents).unwrap();
         let config: Configuration = serde_json::from_str(&contents).unwrap();
         config
-    }
-
-    fn fetch_login(&self, unit: &MonitorUnit) -> &String {
-        return &self.users[&unit.stream.user_id].login;
     }
 }
