@@ -149,7 +149,6 @@ impl Monitor {
         }
 
         loop {
-            // Reload configuration if needed
             if self.needs_reload() {
                 println!("Attempting to reload the updated configuration.");
                 let local_config = Monitor::load_configuration(&self.filename);
@@ -231,8 +230,6 @@ impl Monitor {
             for (stream_id, unit) in self.streams.iter_mut() {
                 if let Some(child) = &mut unit.child {
                     match child.try_wait() {
-                        // I would rely on the return code to verify success, however this has different behavior based on application. 
-                        // Streamlink will sometimes exit with an error even if the stream completed successfully.
                         Ok(Some(_status)) => {}, 
                         Ok(None) => continue,
                         Err(e) => {
@@ -248,18 +245,27 @@ impl Monitor {
                     MonitorStage::Recording => (create_cleanup_process(&unit), MonitorStage::Cleanup),
                     MonitorStage::Cleanup => {
                         let recording_full_path = path::Path::new(&unit.recording_path).join(&unit.filename);
-                        fs::remove_file(recording_full_path).unwrap();
+                        if let Err(e) = fs::remove_file(recording_full_path) {
+                            eprintln!("Failed to remove the file with error: {}\n", e);
+                            self.completed.push(stream_id.clone());
+                            continue;
+                        }
                         (create_movement_process(&unit), MonitorStage::Moving)
                     },
                     MonitorStage::Moving => {
                         let cleanup_full_path = path::Path::new(&unit.cleanup_path).join(&unit.filename);
-                        fs::remove_file(cleanup_full_path).unwrap();
+                        if let Err(e) = fs::remove_file(cleanup_full_path) {
+                            eprintln!("Failed to remove the file with error: {}", e);
+                        }
                         self.completed.push(stream_id.clone());
                         continue;
                     }
                 };
     
-                unit.child = Some(command.spawn().unwrap()); //TODO: Instead of just panicing here, gracefully end the program with a message that the application was not found.
+                unit.child = match command.spawn() {
+                    Ok(child) => Some(child),
+                    Err(e) => panic!("Unrecoverable application error: {}", e)
+                };
                 unit.stage = stage;
             }
 
@@ -269,23 +275,28 @@ impl Monitor {
                 }
             }
 
-            if self.previous_length != self.streams.len() {
-                match self.streams.values().collect::<Vec<&MonitorUnit>>().as_slice() {
-                    [] => println!("Not recording."),
-                    [single] => println!("Actively recording {}'s stream.", single.stream.user_name),
-                    [first, second] => println!("Actively recording {}'s and {}'s stream.", first.stream.user_name, second.stream.user_name),
-                    [start @ .., last] => {
-                        print!("Actively recording ");
-                        for entry in start {
-                            print!("{}, ", entry.stream.user_name);
-                        }
-                        println!("and {}'s streams.",  last.stream.user_name);
-                    }
-                }
-                self.previous_length = self.streams.len();
+            let active_streams = self.streams.values().collect::<Vec<&MonitorUnit>>();
+            if self.previous_length != active_streams.len() {
+                Monitor::print_active_streams(active_streams.as_slice());
+                self.previous_length = active_streams.len();
             }
 
             thread::sleep(self.refresh_duration);
+        }
+    }
+
+    fn print_active_streams(streams: &[&MonitorUnit]) {
+        match streams {
+            [] => println!("Not recording."),
+            [single] => println!("Actively recording {}'s stream.", single.stream.user_name),
+            [first, second] => println!("Actively recording {}'s and {}'s stream.", first.stream.user_name, second.stream.user_name),
+            [start @ .., last] => {
+                print!("Actively recording ");
+                for entry in start {
+                    print!("{}, ", entry.stream.user_name);
+                }
+                println!("and {}'s streams.",  last.stream.user_name);
+            }
         }
     }
 
