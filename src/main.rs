@@ -1,11 +1,12 @@
-mod monitor;
+mod orchestrator;
 mod twitch;
+mod configuration;
+use orchestrator::StreamOrchestrator;
 
-use monitor::Monitor;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filename = String::from("config.json");
-    let mut monitor = Monitor::new(filename);
+    let mut monitor = StreamOrchestrator::new(filename);
     monitor.run();
 
     Ok(())
