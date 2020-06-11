@@ -34,7 +34,7 @@ impl StreamOrchestrator {
         let mut api = TwitchHelixAPI::new(config.client_id.clone(), config.client_secret.clone());
 
         let users = api.retrieve_users(&config.login_names).unwrap();
-        let halt_streams: Vec<TwitchStream> = if config.halt_newly_added {
+        let halt_streams: Vec<TwitchStream> = if config.halt_until_next_live {
             api.retrieve_streams(users.iter()).unwrap()
         } else {
             Vec::with_capacity(25)
